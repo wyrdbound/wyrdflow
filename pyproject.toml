@@ -58,9 +58,6 @@ Documentation = "https://wyrdflow.readthedocs.io/"
 Repository = "https://github.com/wyrdbound/wyrdflow"
 "Bug Tracker" = "https://github.com/wyrdbound/wyrdflow/issues"
 
-[project.scripts]
-wyrdflow = "wyrdflow.cli:main"
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -159,6 +156,8 @@ warn_no_return = true
 warn_unreachable = true
 strict_equality = true
 strict_concatenate = true
+mypy_path = "src"
+packages = ["wyrdflow"]
 
 [[tool.mypy.overrides]]
 module = [
@@ -168,3 +167,11 @@ module = [
     "tenacity.*",
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+disallow_untyped_decorators = false
+ignore_errors = true
