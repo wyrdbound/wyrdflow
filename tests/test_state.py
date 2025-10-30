@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from wyrdflow.core import WorkflowState
+from wyrdflow.core import StateInspector, StateSnapshot, WorkflowState
 
 
 class TestWorkflowState:
@@ -188,3 +188,218 @@ class TestWorkflowState:
         # This should raise validation error - invalid type
         with pytest.raises(ValueError):
             state.workflow_id = "not-a-uuid"  # type: ignore[assignment]
+
+
+class TestStateSnapshot:
+    """Test suite for StateSnapshot class."""
+
+    def test_create_snapshot_from_state(self):
+        """Test creating a snapshot from WorkflowState."""
+        # Create a state with some data
+        state = WorkflowState.create_new()
+        state.set("test_data", "test_value")
+        state.set_metadata("test_meta", "meta_value")
+
+        # Create snapshot
+        snapshot = StateSnapshot.from_state(state, source_node_id="test_node")
+
+        assert snapshot.workflow_id == state.workflow_id
+        assert snapshot.workflow_run_id == state.workflow_run_id
+        assert snapshot.source_node_id == "test_node"
+        assert snapshot.data["test_data"] == "test_value"
+        assert snapshot.metadata["test_meta"] == "meta_value"
+        assert isinstance(snapshot.snapshot_id, UUID)
+
+    def test_snapshot_is_immutable(self):
+        """Test that snapshots are immutable."""
+        state = WorkflowState.create_new()
+        snapshot = StateSnapshot.from_state(state)
+
+        # Should not be able to modify snapshot fields
+        with pytest.raises(ValueError):
+            snapshot.workflow_id = uuid4()  # type: ignore[misc]
+
+    def test_restore_state_from_snapshot(self):
+        """Test restoring a WorkflowState from snapshot."""
+        # Create original state
+        original_state = WorkflowState.create_new()
+        original_state.set("test_data", "test_value")
+        original_state.set_metadata("test_meta", "meta_value")
+
+        # Create snapshot
+        snapshot = StateSnapshot.from_state(original_state)
+
+        # Restore state
+        restored_state = snapshot.restore()
+
+        assert restored_state.workflow_id == original_state.workflow_id
+        assert restored_state.workflow_run_id == original_state.workflow_run_id
+        assert restored_state.get("test_data") == "test_value"
+        assert restored_state.get_metadata("test_meta") == "meta_value"
+
+        # Verify they are separate objects
+        restored_state.set("new_data", "new_value")
+        assert original_state.get("new_data") is None
+
+    def test_snapshot_with_extra_fields(self):
+        """Test snapshot handles extra fields correctly."""
+        # Create state with extra fields
+        state_dict = {
+            "workflow_id": uuid4(),
+            "workflow_run_id": uuid4(),
+            "data": {"test": "data"},
+            "metadata": {"test": "meta"},
+            "custom_field": "custom_value",
+        }
+        state = WorkflowState(**state_dict)
+
+        # Create snapshot
+        snapshot = StateSnapshot.from_state(state)
+
+        # Restore and check extra fields
+        restored_state = snapshot.restore()
+        assert hasattr(restored_state, "custom_field")
+        assert restored_state.custom_field == "custom_value"  # type: ignore[attr-defined]
+
+
+class TestStateInspector:
+    """Test suite for StateInspector class."""
+
+    def test_format_state_basic(self):
+        """Test basic state formatting."""
+        state = WorkflowState.create_new()
+        state.set("simple_key", "simple_value")
+        state.set_metadata("meta_key", "meta_value")
+
+        formatted = StateInspector.format_state(state)
+
+        assert "WorkflowState Overview" in formatted
+        assert str(state.workflow_id) in formatted
+        assert 'simple_key: "simple_value"' in formatted
+        assert 'meta_key: "meta_value"' in formatted
+
+    def test_format_state_without_metadata(self):
+        """Test state formatting without metadata."""
+        state = WorkflowState.create_new()
+        state.set("test_key", "test_value")
+
+        formatted = StateInspector.format_state(state, include_metadata=False)
+
+        assert 'test_key: "test_value"' in formatted
+        assert "Metadata" not in formatted
+
+    def test_format_state_with_nested_data(self):
+        """Test formatting state with nested data structures."""
+        state = WorkflowState.create_new()
+        state.set("nested", {"level1": {"level2": "deep_value"}})
+        state.set("list_data", [1, 2, 3, 4, 5])
+
+        formatted = StateInspector.format_state(state, max_depth=2)
+
+        assert "nested:" in formatted
+        assert "level1:" in formatted
+        assert "list_data:" in formatted
+
+    def test_compare_states_no_changes(self):
+        """Test comparing identical states."""
+        state1 = WorkflowState.create_new()
+        state1.set("test_key", "test_value")
+
+        # Create a copy
+        state2 = WorkflowState(**state1.model_dump())
+
+        diff = StateInspector.compare_states(state1, state2)
+
+        assert not diff["workflow_id_changed"]
+        assert not diff["workflow_run_id_changed"]
+        assert len(diff["data_changes"]["added"]) == 0
+        assert len(diff["data_changes"]["removed"]) == 0
+        assert len(diff["data_changes"]["modified"]) == 0
+
+    def test_compare_states_with_changes(self):
+        """Test comparing states with differences."""
+        state1 = WorkflowState.create_new()
+        state1.set("existing_key", "old_value")
+        state1.set("remove_key", "will_be_removed")
+
+        state2 = WorkflowState(**state1.model_dump())
+        state2.set("existing_key", "new_value")  # Modified
+        state2.set("added_key", "new_value")  # Added
+        state2.data.pop("remove_key")  # Removed
+
+        diff = StateInspector.compare_states(state1, state2)
+
+        # Check changes
+        assert "existing_key" in diff["data_changes"]["modified"]
+        assert diff["data_changes"]["modified"]["existing_key"]["old"] == "old_value"
+        assert diff["data_changes"]["modified"]["existing_key"]["new"] == "new_value"
+        assert "added_key" in diff["data_changes"]["added"]
+        assert "remove_key" in diff["data_changes"]["removed"]
+
+    def test_search_state_in_keys(self):
+        """Test searching for terms in state keys."""
+        state = WorkflowState.create_new()
+        state.set("user_name", "john")
+        state.set("user_email", "john@example.com")
+        state.set("system_info", "data")
+
+        results = StateInspector.search_state(
+            state, "user", search_keys=True, search_values=False
+        )
+
+        assert len(results) == 2
+        assert all(result["match_in"] == "key" for result in results)
+        assert any("user_name" in result["path"] for result in results)
+        assert any("user_email" in result["path"] for result in results)
+
+    def test_search_state_in_values(self):
+        """Test searching for terms in state values."""
+        state = WorkflowState.create_new()
+        state.set("name", "john doe")
+        state.set("email", "john@example.com")
+        state.set("city", "New York")
+
+        results = StateInspector.search_state(
+            state, "john", search_keys=False, search_values=True
+        )
+
+        assert len(results) == 2
+        assert all(result["match_in"] == "value" for result in results)
+
+    def test_search_state_case_insensitive(self):
+        """Test case-insensitive search."""
+        state = WorkflowState.create_new()
+        state.set("USER_NAME", "John Doe")
+
+        # Case insensitive search (default)
+        results = StateInspector.search_state(state, "user")
+        assert len(results) == 1
+
+        results = StateInspector.search_state(state, "john")
+        assert len(results) == 1
+
+        # Case sensitive search
+        results = StateInspector.search_state(state, "user", case_sensitive=True)
+        assert len(results) == 0
+
+        results = StateInspector.search_state(state, "USER", case_sensitive=True)
+        assert len(results) == 1
+
+    def test_search_state_nested_data(self):
+        """Test searching in nested data structures."""
+        state = WorkflowState.create_new()
+        state.set("user", {"profile": {"name": "john", "settings": {"theme": "dark"}}})
+
+        results = StateInspector.search_state(state, "john")
+
+        assert len(results) == 1
+        assert "user.profile.name" in results[0]["path"]
+
+    def test_search_state_empty_results(self):
+        """Test search with no matches."""
+        state = WorkflowState.create_new()
+        state.set("test_key", "test_value")
+
+        results = StateInspector.search_state(state, "nonexistent")
+
+        assert len(results) == 0

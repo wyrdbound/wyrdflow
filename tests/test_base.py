@@ -329,11 +329,14 @@ class TestBaseNode:
 
         result = await langraph_func(state_dict)
 
-        assert "output" in result
-        assert "node_id" in result
+        # The result is merged directly into the state
+        assert "result" in result
+        assert "message" in result
         assert "workflow_state" in result
-        assert result["output"]["result"] == 30  # 15 * 2
-        assert result["node_id"] == "langraph_test"
+        assert "last_node" in result
+        assert result["result"] == 30  # 15 * 2
+        assert result["message"] == "Processed langraph_test"
+        assert result["last_node"] == "langraph_test"
 
     @pytest.mark.asyncio
     async def test_as_langraph_node_with_existing_state(self):

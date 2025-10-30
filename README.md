@@ -13,10 +13,46 @@ Wyrdflow is a Python library designed for ML engineers and AI developers who nee
 
 - **Class-based nodes** with full input/output validation using Pydantic v2
 - **Declarative configuration** for retries, timeouts, and behavior
+- **Advanced state management** with inspection, snapshots, and restore capabilities
 - **Built-in observability** with LangSmith integration
 - **Thread-safe** execution for concurrent environments
 - **Type-safe by default** with comprehensive type hints
 - **Production-ready** with comprehensive error handling
+
+## Current Capabilities (Phase 1)
+
+Wyrdflow currently provides a solid foundation for workflow orchestration:
+
+### State Management
+
+- **WorkflowState**: Type-safe state management with Pydantic validation
+- **StateSnapshot**: Immutable snapshots for debugging and rollback
+- **StateInspector**: Utilities for state visualization, comparison, and search
+
+```python
+from wyrdflow.core import WorkflowState, StateSnapshot, StateInspector
+
+# Create and manage workflow state
+state = WorkflowState.create_new()
+state.set("user_data", {"name": "Alice", "role": "admin"})
+
+# Create snapshots for debugging/rollback
+snapshot = StateSnapshot.from_state(state, source_node_id="validation")
+restored_state = snapshot.restore()  # Restore from snapshot
+
+# Inspect and analyze state
+formatted = StateInspector.format_state(state)
+results = StateInspector.search_state(state, "alice")
+diff = StateInspector.compare_states(state1, state2)
+```
+
+### Node System
+
+- **BaseNode**: Abstract base class with retry logic and error handling
+- **LangGraph Integration**: Seamless integration with LangGraph workflows
+- **Type Safety**: Full input/output validation with Pydantic schemas
+
+Run `python examples/state_management_demo.py` to see state management in action!
 
 ## Quick Start
 

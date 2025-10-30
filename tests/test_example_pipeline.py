@@ -22,6 +22,8 @@ from simple_pipeline import (  # noqa: E402
     RawDataInput,
     ValidatedDataInput,
     ValidatedDataOutput,
+    create_pipeline_nodes,
+    create_sample_data,
     run_data_pipeline,
 )
 
@@ -325,9 +327,17 @@ class TestFullPipeline:
     @pytest.mark.asyncio
     async def test_full_pipeline_integration(self):
         """Test the complete pipeline from start to finish."""
+        # Use the helper functions from the existing import
+
+        # Create nodes and sample data
+        input_node, processor_node, output_node = create_pipeline_nodes()
+        raw_data = create_sample_data()
+
         # Mock the print statements to avoid output during testing
         with patch("builtins.print"):
-            result = await run_data_pipeline()
+            result = await run_data_pipeline(
+                input_node, processor_node, output_node, raw_data
+            )
 
         # Check final result structure
         assert "formatted_result" in result

@@ -239,6 +239,44 @@ class BaseNode(ABC, Generic[InputType, OutputType]):
         self._logger.info(f"Starting execution of node {self.node_id}")
 
         try:
+            # Check if output is pinned for testing
+            if self.config.is_output_pinned():
+                self._logger.info(f"Using pinned output for node {self.node_id}")
+                pinned_output = self.config.pinned_output
+
+                if pinned_output is None:
+                    raise NodeExecutionError(
+                        f"Node {self.node_id} has output pinning enabled but no pinned output data",
+                        self.node_id,
+                    )
+
+                # Convert pinned output to dictionary format
+                if hasattr(pinned_output, "model_dump"):
+                    # It's a Pydantic model
+                    output_dict: dict[str, Any] = pinned_output.model_dump()
+                elif isinstance(pinned_output, dict):
+                    # It's already a dictionary - validate it through our output schema
+                    validated_output = self.validate_output(pinned_output)
+                    output_dict = validated_output.model_dump()
+                else:
+                    # Try to create a dict and validate it
+                    try:
+                        raw_dict = (
+                            {"result": pinned_output}
+                            if not isinstance(pinned_output, dict)
+                            else pinned_output
+                        )
+                        validated_output = self.validate_output(raw_dict)
+                        output_dict = validated_output.model_dump()
+                    except Exception as e:
+                        raise NodeExecutionError(
+                            f"Node {self.node_id} pinned output could not be validated: {e}",
+                            self.node_id,
+                            e,
+                        ) from e
+
+                return output_dict
+
             # Validate input
             validated_input = self.validate_input(raw_input)
 
@@ -261,9 +299,9 @@ class BaseNode(ABC, Generic[InputType, OutputType]):
 
             # Convert Pydantic model to dictionary for serialization
             if hasattr(output, "model_dump"):
-                output_dict: dict[str, Any] = output.model_dump()
+                result_dict: dict[str, Any] = output.model_dump()
             else:
-                output_dict = dict(output) if hasattr(output, "__dict__") else {}
+                result_dict = dict(output) if hasattr(output, "__dict__") else {}
 
             # Update the original state with changes from node execution
             if state is not None:
@@ -275,7 +313,7 @@ class BaseNode(ABC, Generic[InputType, OutputType]):
             self._logger.info(
                 f"Successfully completed execution of node {self.node_id}"
             )
-            return output_dict
+            return result_dict
 
         except asyncio.TimeoutError as e:
             error_msg = (
