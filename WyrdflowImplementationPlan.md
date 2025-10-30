@@ -3,7 +3,7 @@
 **Project**: Wyrdflow
 **Tagline**: Production-grade workflow orchestration for Agentic AI
 **Version**: 1.0
-**Last Updated**: October 26, 2025
+**Last Updated**: October 29, 2025
 
 ---
 
@@ -39,6 +39,7 @@ Unlike traditional LangGraph workflows where nodes are simple functions:
 
 - **Class-based nodes** with full input/output validation
 - **Declarative configuration** for retries, timeouts, and behavior
+- **Enhanced state management** leveraging LangGraph's durable execution with debugging capabilities
 - **Output pinning** (n8n-style) for testing and debugging
 - **Built-in observability** with LangSmith integration
 - **Workflow serialization** for version control and deployment
@@ -84,7 +85,8 @@ Unlike traditional LangGraph workflows where nodes are simple functions:
 ### State Management
 
 - **Nested object support** (dicts of nested objects)
-- **State persistence** between runs (resume workflows)
+- **State persistence** between runs (resume workflows) - leverages LangGraph's durable execution
+- **Enhanced state debugging** with Wyrdflow's StateInspector and comparison tools
 - **State inspection** at any node for troubleshooting
 - **State versioning** via JSON export and version control
 
@@ -145,6 +147,7 @@ Unlike traditional LangGraph workflows where nodes are simple functions:
    - `WorkflowState` base class with type hints
    - State inspection utilities
    - State snapshot/restore mechanisms (in-memory)
+   - Foundation for LangGraph durable execution integration
 
 4. **Basic LangGraph Integration**
    - Wrapper for `StateGraph` with enhanced features
@@ -1081,11 +1084,12 @@ Unlike traditional LangGraph workflows where nodes are simple functions:
 
 2. **State Persistence**
 
-   - Save execution state to database (PostgreSQL, MongoDB)
-   - Resume failed workflows from checkpoint
-   - Checkpoint/restore API
-   - Automatic checkpointing (configurable frequency)
-   - State retention policies
+   - Leverage LangGraph's durable execution as underlying persistence layer
+   - Enhanced state management with Wyrdflow's debugging capabilities
+   - Resume failed workflows from LangGraph checkpoints
+   - Checkpoint/restore API with Wyrdflow state enhancements
+   - Automatic checkpointing via LangGraph's built-in mechanisms
+   - State retention policies through LangGraph configuration
 
 3. **Enhanced Metrics**
 
@@ -1118,8 +1122,8 @@ Unlike traditional LangGraph workflows where nodes are simple functions:
 
 #### Deliverables
 
-- ✅ Replay engine with state restoration
-- ✅ State persistence layer (database-backed)
+- ✅ Replay engine with LangGraph-backed state restoration
+- ✅ Enhanced state persistence layer (LangGraph durable execution + Wyrdflow features)
 - ✅ Prometheus metrics exporter
 - ✅ Alerting integration examples
 - ✅ Profiling tools and documentation
@@ -1128,8 +1132,9 @@ Unlike traditional LangGraph workflows where nodes are simple functions:
 
 #### Success Criteria
 
-- Can rerun from any node reliably
-- State persistence has <1% overhead
+- Can rerun from any node reliably using LangGraph's durable execution
+- State persistence leverages battle-tested LangGraph infrastructure
+- Enhanced debugging capabilities work seamlessly with LangGraph checkpoints
 - Metrics integrate seamlessly with Prometheus/Grafana
 - Alerts trigger correctly on failures
 - Production issues are debuggable within minutes
