@@ -90,7 +90,9 @@ class MockSlowNode(BaseNode[MockTestInput, MockTestOutput]):
         state: WorkflowState,
     ) -> MockTestOutput:
         """Sleeps for longer than timeout."""
-        await asyncio.sleep(0.3)  # Sleep for 300ms
+        await asyncio.sleep(
+            0.002
+        )  # Sleep for 2ms - just long enough to trigger timeout
         return MockTestOutput(result=input_data.value, message="Slow result")
 
 
@@ -199,7 +201,8 @@ class TestBaseNode:
     @pytest.mark.asyncio
     async def test_execution_failure(self):
         """Test node execution failure handling."""
-        node = MockFailingNode(node_id="failing_node")
+        config = NodeConfig(retry_attempts=0)  # No retries for fast test
+        node = MockFailingNode(node_id="failing_node", config=config)
         raw_input = {"value": 10, "name": "failure_test"}
 
         with pytest.raises(NodeExecutionError) as exc_info:
@@ -212,7 +215,7 @@ class TestBaseNode:
     @pytest.mark.asyncio
     async def test_timeout_handling(self):
         """Test timeout handling during execution."""
-        config = NodeConfig(timeout=0.1)  # 100ms timeout
+        config = NodeConfig(timeout=0.001, retry_attempts=0)  # 1ms timeout, no retries
         node = MockSlowNode(node_id="slow_node", config=config)
         raw_input = {"value": 10, "name": "timeout_test"}
 
@@ -260,7 +263,7 @@ class TestBaseNode:
                     result=input_data.value, message=f"Success on attempt {call_count}"
                 )
 
-        config = NodeConfig(retry_attempts=3, retry_delay=0.1)
+        config = NodeConfig(retry_attempts=3, retry_delay=0.001)
         node = RetryMockTestNode(node_id="retry_node", config=config)
         raw_input = {"value": 42, "name": "retry_test"}
 
@@ -273,7 +276,7 @@ class TestBaseNode:
     @pytest.mark.asyncio
     async def test_retry_exhaustion(self):
         """Test behavior when all retry attempts are exhausted."""
-        config = NodeConfig(retry_attempts=2, retry_delay=0.1)
+        config = NodeConfig(retry_attempts=2, retry_delay=0.001)
         node = MockFailingNode(node_id="exhausted_node", config=config)
         raw_input = {"value": 10, "name": "exhaustion_test"}
 
@@ -289,7 +292,7 @@ class TestBaseNode:
         """Test retry decorator creation with fixed delay."""
         config = NodeConfig(
             retry_attempts=3,
-            retry_delay=0.01,  # 10ms delay
+            retry_delay=0.001,  # 1ms delay
             retry_exponential_base=1.0,  # Fixed delay
         )
         node = MockTestNode(node_id="test", config=config)
@@ -303,9 +306,9 @@ class TestBaseNode:
         """Test retry decorator creation with exponential backoff."""
         config = NodeConfig(
             retry_attempts=3,
-            retry_delay=0.01,  # 10ms initial delay
+            retry_delay=0.001,  # 1ms initial delay
             retry_exponential_base=2.0,
-            retry_max_delay=0.1,  # 100ms max delay
+            retry_max_delay=0.01,  # 10ms max delay
         )
         node = MockTestNode(node_id="test", config=config)
 
