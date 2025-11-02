@@ -182,15 +182,16 @@ Unlike traditional LangGraph workflows where nodes are simple functions:
    - Pause workflow execution
    - Prompt user for input (CLI interface initially)
    - Type validation on user input using Pydantic
-   - Timeout handling with configurable default values
-   - Support for different input types (text, numbers, choices)
+   - Flexible field configuration with dynamic schema
+   - Custom validation functions
+   - Support for different input types (text, numbers, booleans, lists)
+   - Pluggable interface design for future web/GUI support
 
 2. **Human Approval Node**
 
    - Present data for review with formatted display
    - Binary approve/reject flow
    - Optional feedback/comment collection
-   - Timeout with configurable default action
    - Approval history tracking
 
 3. **Input Methods**
@@ -203,14 +204,13 @@ Unlike traditional LangGraph workflows where nodes are simple functions:
 - ✅ `HumanInputNode` class
 - ✅ `HumanApprovalNode` class
 - ✅ Example: Document review workflow with human approval
-- ✅ Tests for timeout and validation scenarios
+- ✅ Tests for validation scenarios
 - ✅ Documentation for human interaction patterns
 
 #### Success Criteria
 
 - Workflow pauses and waits for human input
 - Handles invalid input gracefully with clear error messages
-- Timeout behavior is configurable and predictable
 - Works seamlessly with CLI interface
 
 ---

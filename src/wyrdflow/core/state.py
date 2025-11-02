@@ -87,17 +87,53 @@ class WorkflowState(BaseModel):
             metadata=initial_metadata or {},
         )
 
-    def get(self, key: str, default: Any = None) -> Any:
+    def get(self, key: str, default: Any = None, nested: bool = True) -> Any:
         """Get a value from the state data.
 
+        Supports dot notation for nested access by default.
+
         Args:
-            key: Key to retrieve
+            key: Key to retrieve. Supports dot notation (e.g., "user.name.first")
             default: Default value if key not found
+            nested: If True, treat '.' as path separator for nested access.
+                   If False, treat key as literal dictionary key.
 
         Returns:
             Value from state data or default
+
+        Examples:
+            >>> state.data = {"user": {"name": "Alice", "age": 30}}
+            >>> state.get("user.name")  # "Alice" (nested access)
+            >>> state.get("user.name", nested=False)  # None (literal key)
+            >>> state.data = {"file.txt": "contents"}
+            >>> state.get("file.txt", nested=False)  # "contents" (literal key)
+
+        Raises:
+            ValueError: If nested=True and key contains empty parts (e.g., "a..b")
         """
-        return self.data.get(key, default)
+        if not nested:
+            return self.data.get(key, default)
+
+        # Handle nested dot notation
+        parts = key.split(".")
+
+        # Validate no empty parts
+        if any(not part for part in parts):
+            raise ValueError(
+                f"Invalid nested key '{key}': contains empty parts. "
+                f"Use nested=False for literal keys with dots."
+            )
+
+        # Navigate nested structure
+        current: Any = self.data
+        for part in parts:
+            if not isinstance(current, dict):
+                return default
+            current = current.get(part)
+            if current is None:
+                return default
+
+        return current
 
     def set(self, key: str, value: Any) -> None:
         """Set a value in the state data.

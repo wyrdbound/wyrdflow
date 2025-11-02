@@ -62,6 +62,79 @@ class TestWorkflowState:
         state.set("test_key", "test_value")
         assert state.get("test_key") == "test_value"
 
+    def test_get_nested_dot_notation(self):
+        """Test get with nested dot notation (default behavior)."""
+        state = WorkflowState.create_new()
+
+        # Set up nested structure
+        state.data = {
+            "user": {"name": "Alice", "age": 30, "address": {"city": "NYC"}},
+            "config": {"debug": True},
+        }
+
+        # Test nested access (default nested=True)
+        assert state.get("user.name") == "Alice"
+        assert state.get("user.age") == 30
+        assert state.get("user.address.city") == "NYC"
+        assert state.get("config.debug") is True
+
+        # Test missing nested paths
+        assert state.get("user.missing") is None
+        assert state.get("user.missing", "default") == "default"
+        assert state.get("missing.nested.path") is None
+        assert state.get("user.name.invalid") is None  # name is not a dict
+
+    def test_get_literal_key_with_dots(self):
+        """Test get with literal keys containing dots."""
+        state = WorkflowState.create_new()
+
+        # Set up data with literal dot keys
+        state.data = {"file.txt": "contents", "api.response": {"status": 200}}
+
+        # Test literal access with nested=False
+        assert state.get("file.txt", nested=False) == "contents"
+        assert state.get("api.response", nested=False) == {"status": 200}
+
+        # With nested=True (default), these would look for nested paths
+        assert state.get("file.txt") is None  # Looks for data["file"]["txt"]
+        assert state.get("api.response") is None  # Looks for data["api"]["response"]
+
+    def test_get_nested_invalid_key_format(self):
+        """Test get raises ValueError for invalid nested keys."""
+        state = WorkflowState.create_new()
+
+        # Empty parts in path should raise ValueError
+        with pytest.raises(ValueError, match="contains empty parts"):
+            state.get("a..b")
+
+        with pytest.raises(ValueError, match="contains empty parts"):
+            state.get(".key")
+
+        with pytest.raises(ValueError, match="contains empty parts"):
+            state.get("key.")
+
+        # These should work fine with nested=False
+        state.data = {"a..b": "value1", ".key": "value2", "key.": "value3"}
+        assert state.get("a..b", nested=False) == "value1"
+        assert state.get(".key", nested=False) == "value2"
+        assert state.get("key.", nested=False) == "value3"
+
+    def test_get_nested_non_dict_in_path(self):
+        """Test get handles non-dict values in nested path gracefully."""
+        state = WorkflowState.create_new()
+
+        # Set up structure where intermediate value is not a dict
+        state.data = {
+            "user": {"name": "Alice", "age": 30},  # age is int, not dict
+            "settings": "simple_string",  # string, not dict
+        }
+
+        # Trying to traverse through non-dict should return default
+        assert state.get("user.age.invalid") is None
+        assert state.get("user.age.invalid", "default") == "default"
+        assert state.get("settings.nested") is None
+        assert state.get("settings.nested.deep") is None
+
     def test_update_data(self):
         """Test update method for multiple data changes."""
         state = WorkflowState.create_new()
