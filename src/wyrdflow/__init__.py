@@ -5,13 +5,21 @@ from wyrdflow.core.config import NodeConfig
 from wyrdflow.core.schemas import NodeContext, NodeInput, NodeOutput
 from wyrdflow.core.state import StateInspector, StateSnapshot, WorkflowState
 from wyrdflow.nodes import (
+    ApprovalDecision,
+    ApprovalInterface,
+    ApprovalRecord,
+    ApprovalValidationError,
     FieldConfig,
     FieldValidationResult,
+    HumanApprovalNode,
+    HumanApprovalNodeInput,
+    HumanApprovalNodeOutput,
     HumanInputNode,
     HumanInputNodeInput,
     HumanInputNodeOutput,
     InputInterface,
     InputValidationError,
+    RichApprovalInterface,
     RichCLIInterface,
     UserCancelledError,
 )
@@ -19,9 +27,16 @@ from wyrdflow.nodes import (
 __version__ = "0.1.0"
 
 __all__ = [
+    "ApprovalDecision",
+    "ApprovalInterface",
+    "ApprovalRecord",
+    "ApprovalValidationError",
     "BaseNode",
     "FieldConfig",
     "FieldValidationResult",
+    "HumanApprovalNode",
+    "HumanApprovalNodeInput",
+    "HumanApprovalNodeOutput",
     "HumanInputNode",
     "HumanInputNodeInput",
     "HumanInputNodeOutput",
@@ -32,6 +47,7 @@ __all__ = [
     "NodeExecutionError",
     "NodeInput",
     "NodeOutput",
+    "RichApprovalInterface",
     "RichCLIInterface",
     "StateInspector",
     "StateSnapshot",
