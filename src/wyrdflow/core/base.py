@@ -7,7 +7,6 @@ import logging
 from typing import Any, Callable, Generic, Optional, TypeVar
 
 from tenacity import (
-    RetryError,
     retry,
     retry_if_exception_type,
     stop_after_attempt,
@@ -80,6 +79,8 @@ class BaseNode(ABC, Generic[InputType, OutputType]):
         config: Optional[NodeConfig] = None,
         name: Optional[str] = None,
         description: Optional[str] = None,
+        input_map: Optional[dict[str, str]] = None,
+        output_map: Optional[dict[str, str]] = None,
     ):
         """Initialize the base node.
 
@@ -88,11 +89,15 @@ class BaseNode(ABC, Generic[InputType, OutputType]):
             config: Node configuration including retry and timeout settings
             name: Human-readable name for the node
             description: Description of what the node does
+            input_map: Mapping from state keys to node input arguments
+            output_map: Mapping from node output keys to state keys
         """
         self.node_id = node_id
         self.config = config or NodeConfig()
         self.name = name or node_id
         self.description = description or f"Node {node_id}"
+        self.input_map = input_map or {}
+        self.output_map = output_map or {}
         self._logger = logging.getLogger(f"{self.__class__.__module__}.{node_id}")
 
     @abstractmethod
@@ -321,17 +326,6 @@ class BaseNode(ABC, Generic[InputType, OutputType]):
             )
             self._logger.error(error_msg)
             raise NodeExecutionError(error_msg, self.node_id, e) from e
-
-        except RetryError as e:
-            error_msg = f"Node {self.node_id} failed after {self.config.retry_attempts} attempts"
-            self._logger.error(error_msg)
-            # Handle potential None from last_attempt.exception()
-            last_exception = e.last_attempt.exception()
-            if isinstance(last_exception, Exception):
-                raise NodeExecutionError(error_msg, self.node_id, last_exception) from e
-            else:
-                raise NodeExecutionError(error_msg, self.node_id, None) from e
-
         except Exception as e:
             error_msg = f"Node {self.node_id} execution failed: {e}"
             self._logger.error(error_msg)
@@ -360,18 +354,54 @@ class BaseNode(ABC, Generic[InputType, OutputType]):
         async def langraph_wrapper(state_dict: dict[str, Any]) -> dict[str, Any]:
             """LangGraph-compatible wrapper function."""
             # Extract node input from the state dictionary
-            # For the first node, check if there's an explicit "input" key
-            # Otherwise, use the entire state (excluding internal metadata)
-            if "input" in state_dict and "last_node" not in state_dict:
-                # First node in the workflow - use explicit input
-                node_input = state_dict["input"]
-            else:
-                # Subsequent nodes - use the entire state as input
-                node_input = state_dict.copy()
-                # Remove internal LangGraph metadata that shouldn't be passed to the node
-                internal_keys = {"workflow_state", "context", "last_node", "input"}
-                for key in internal_keys:
-                    node_input.pop(key, None)  # Extract context and workflow state
+            node_input: dict[str, Any] = {}
+
+            # 1. Apply input mapping if defined
+            if self.input_map:
+                for input_key, state_path in self.input_map.items():
+                    # Support dot notation for nested state access
+                    value: Any = state_dict
+                    try:
+                        for part in state_path.split("."):
+                            if isinstance(value, dict):
+                                value = value.get(part)
+                            else:
+                                value = None
+                                break
+                        if value is not None:
+                            node_input[input_key] = value
+                    except (AttributeError, TypeError):
+                        # Log warning but continue - validation will catch missing required fields
+                        self._logger.warning(
+                            f"Could not map state path '{state_path}' to input '{input_key}'"
+                        )
+
+            # 2. If no mapping or partial mapping, try standard resolution
+            if not node_input:
+                # For the first node, check if there's an explicit "input" key
+                # Otherwise, use the entire state (excluding internal metadata)
+                if "input" in state_dict and "last_node" not in state_dict:
+                    # First node in the workflow - use explicit input
+                    node_input = state_dict["input"]
+                else:
+                    # Subsequent nodes - use the entire state as input
+                    node_input = state_dict.copy()
+                    # Remove internal LangGraph metadata that shouldn't be passed to the node
+                    internal_keys = {"workflow_state", "context", "last_node", "input"}
+                    for key in internal_keys:
+                        node_input.pop(key, None)
+            elif (
+                self.input_map
+                and "input" in state_dict
+                and isinstance(state_dict["input"], dict)
+            ):
+                # If we have some mapped inputs, we might still want to merge with
+                # explicit "input" if it exists and isn't fully covered
+                # Only add keys that weren't already mapped
+                for k, v in state_dict["input"].items():
+                    if k not in node_input:
+                        node_input[k] = v
+
             context_data = state_dict.get("context", {})
             workflow_state_data = state_dict.get("workflow_state", {})
 
@@ -394,7 +424,24 @@ class BaseNode(ABC, Generic[InputType, OutputType]):
 
             # Update the state with the result data
             new_state = state_dict.copy()
-            new_state.update(result)  # Merge result into state
+
+            # Apply output mapping if defined
+            if self.output_map:
+                for result_key, state_path in self.output_map.items():
+                    if result_key in result:
+                        value = result[result_key]
+                        # Handle nested state updates
+                        parts = state_path.split(".")
+                        target = new_state
+                        for _i, part in enumerate(parts[:-1]):
+                            if part not in target or not isinstance(target[part], dict):
+                                target[part] = {}
+                            target = target[part]
+                        target[parts[-1]] = value
+            else:
+                # Default behavior: merge result into state
+                new_state.update(result)
+
             new_state["workflow_state"] = workflow_state.model_dump()
             new_state["last_node"] = self.node_id
 

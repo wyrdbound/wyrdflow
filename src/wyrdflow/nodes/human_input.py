@@ -7,6 +7,7 @@ from typing import Any, Callable, Optional, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic_core import PydanticUndefined
 from rich.console import Console
 from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt
 
@@ -170,7 +171,9 @@ class RichCLIInterface(InputInterface):
 class HumanInputNodeInput(NodeInput):
     """Input configuration for HumanInputNode."""
 
-    fields: list[FieldConfig] = Field(description="List of fields to collect")
+    fields: list[FieldConfig] = Field(
+        default_factory=list, description="List of fields to collect"
+    )
     output_mapping: Optional[dict[str, str]] = Field(
         default=None,
         description=("Map field names to state paths (e.g., {'genre': 'plot.genre'})"),
@@ -208,6 +211,8 @@ class HumanInputNodeInput(NodeInput):
 class HumanInputNodeOutput(NodeOutput):
     """Output from HumanInputNode containing collected field values."""
 
+    model_config = ConfigDict(extra="allow")
+
     collected_fields: dict[str, Any] = Field(
         description="Dictionary of collected field values"
     )
@@ -227,10 +232,83 @@ class HumanInputNode(BaseNode[HumanInputNodeInput, HumanInputNodeOutput]):
         self,
         node_id: str,
         interface: Optional[InputInterface] = None,
+        fields: Optional[list[FieldConfig]] = None,
         **kwargs: Any,
     ):
         super().__init__(node_id=node_id, **kwargs)
         self.interface = interface or RichCLIInterface()
+        self.fields = fields or []
+
+    @classmethod
+    def from_model(
+        cls,
+        model: type[BaseModel],
+        node_id: str,
+        output_map: Optional[dict[str, str]] = None,
+        **kwargs: Any,
+    ) -> "HumanInputNode":
+        """Create a HumanInputNode from a Pydantic model.
+
+        Args:
+            model: Pydantic model defining the input fields
+            node_id: Unique identifier for the node
+            output_map: Optional mapping from field names to state paths
+            **kwargs: Additional arguments for HumanInputNode constructor
+
+        Returns:
+            Configured HumanInputNode instance
+        """
+        fields: list[FieldConfig] = []
+
+        for name, field_info in model.model_fields.items():
+            # Determine prompt:
+            # 1. Explicit 'prompt' in json_schema_extra
+            # 2. 'description' field
+            # 3. Field name (formatted)
+            prompt = None
+            if field_info.json_schema_extra:
+                prompt_val = field_info.json_schema_extra.get("prompt")  # type: ignore
+                if isinstance(prompt_val, str):
+                    prompt = prompt_val
+
+            if not prompt:
+                prompt = field_info.description
+
+            if not prompt:
+                prompt = name.replace("_", " ").title()
+
+            # Determine help text
+            help_text = None
+            if field_info.json_schema_extra:
+                help_val = field_info.json_schema_extra.get("help_text")  # type: ignore
+                if isinstance(help_val, str):
+                    help_text = help_val
+
+            # Determine default value
+            default_value = None
+            if (
+                field_info.default is not None
+                and field_info.default != PydanticUndefined
+            ):
+                default_value = field_info.default
+
+            # Create field config
+            field_config = FieldConfig(
+                name=name,
+                field_type=field_info.annotation or str,
+                prompt=str(prompt),
+                required=field_info.is_required(),
+                default_value=default_value,
+                help_text=help_text,
+            )
+            fields.append(field_config)
+
+        # If output_map is provided, use it. Otherwise, default to mapping fields to themselves
+        # or let the node handle it (which defaults to node_id_input)
+
+        # Create node with pre-configured fields
+        node = cls(node_id=node_id, fields=fields, output_map=output_map, **kwargs)
+        return node
 
     async def execute(
         self,
@@ -241,20 +319,14 @@ class HumanInputNode(BaseNode[HumanInputNodeInput, HumanInputNodeOutput]):
         """Execute human input collection."""
         results: dict[str, Any] = {}
 
+        # Use fields from constructor if available, otherwise from input
+        fields_to_collect = self.fields if self.fields else input_data.fields
+
         try:
-            for field_config in input_data.fields:
+            for field_config in fields_to_collect:
                 results[field_config.name] = self._collect_field_with_validation(
                     field_config, input_data.max_retry_attempts
                 )
-
-            # Apply output mapping to state if provided
-            if input_data.output_mapping:
-                for field_name, state_path in input_data.output_mapping.items():
-                    if field_name in results:
-                        self._set_nested_value(state, state_path, results[field_name])
-            else:
-                # Default: put all fields under node_id key
-                state.set(f"{self.node_id}_input", results)
 
             # Update metadata
             execution_id = str(uuid4())
@@ -267,11 +339,36 @@ class HumanInputNode(BaseNode[HumanInputNodeInput, HumanInputNodeOutput]):
                 },
             )
 
-            return HumanInputNodeOutput(
-                collected_fields=results,
-                fields_collected=list(results.keys()),
-                execution_id=execution_id,
-            )
+            # Handle output mapping:
+            # 1. If output_map is defined (v2 API), return flat dict - wrapper will handle mapping
+            # 2. If input_data.output_mapping is provided (v1 runtime API), apply it to state
+            # 3. Otherwise, return structured output with collected_fields
+            if self.output_map:
+                # v2 API: Return flat dict, wrapper handles output_map
+                return HumanInputNodeOutput(
+                    collected_fields=results,
+                    fields_collected=list(results.keys()),
+                    execution_id=execution_id,
+                    **results,  # Add fields directly for output_map to access
+                )
+            elif input_data.output_mapping:
+                # v1 API: Apply mapping to state directly
+                for field_name, state_path in input_data.output_mapping.items():
+                    if field_name in results:
+                        self._set_nested_value(state, state_path, results[field_name])
+                return HumanInputNodeOutput(
+                    collected_fields=results,
+                    fields_collected=list(results.keys()),
+                    execution_id=execution_id,
+                )
+            else:
+                # No mapping: put all fields under node_id key in state
+                state.set(f"{self.node_id}_input", results)
+                return HumanInputNodeOutput(
+                    collected_fields=results,
+                    fields_collected=list(results.keys()),
+                    execution_id=execution_id,
+                )
 
         except KeyboardInterrupt:
             raise UserCancelledError("User cancelled workflow execution") from None

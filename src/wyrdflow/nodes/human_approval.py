@@ -180,18 +180,18 @@ class HumanApprovalNodeInput(NodeInput):
     data_to_review: dict[str, Any] = Field(
         description="Data to display for approval review"
     )
-    approval_prompt: str = Field(
-        default="Please review the data above",
+    approval_prompt: Optional[str] = Field(
+        default=None,
         description="Prompt text to display before approval decision",
     )
-    title: str = Field(
-        default="Data Review", description="Title for the approval display"
+    title: Optional[str] = Field(
+        default=None, description="Title for the approval display"
     )
     description: Optional[str] = Field(
         default=None, description="Optional description for the approval process"
     )
-    allow_feedback: bool = Field(
-        default=True, description="Whether to collect optional feedback/comments"
+    allow_feedback: Optional[bool] = Field(
+        default=None, description="Whether to collect optional feedback/comments"
     )
     state_path: Optional[str] = Field(
         default=None,
@@ -238,10 +238,20 @@ class HumanApprovalNode(BaseNode[HumanApprovalNodeInput, HumanApprovalNodeOutput
         self,
         node_id: str,
         interface: Optional[ApprovalInterface] = None,
+        title: str = "Data Review",
+        approval_prompt: str = "Please review the data above",
+        description: Optional[str] = None,
+        allow_feedback: bool = True,
+        state_path: Optional[str] = None,
         **kwargs: Any,
     ):
         super().__init__(node_id=node_id, **kwargs)
         self.interface = interface or RichApprovalInterface()
+        self.title = title
+        self.approval_prompt = approval_prompt
+        self.description = description  # type: ignore[assignment]
+        self.allow_feedback = allow_feedback
+        self.state_path = state_path
 
     async def execute(
         self,
@@ -250,18 +260,32 @@ class HumanApprovalNode(BaseNode[HumanApprovalNodeInput, HumanApprovalNodeOutput
         state: WorkflowState,
     ) -> HumanApprovalNodeOutput:
         """Execute human approval collection."""
+        # Use values from input if provided, otherwise fall back to constructor defaults
+        title = input_data.title or self.title
+        description = input_data.description or self.description
+        _approval_prompt: Optional[str] = input_data.approval_prompt
+        approval_prompt: str = (
+            _approval_prompt if _approval_prompt is not None else self.approval_prompt
+        )
+        allow_feedback = (
+            input_data.allow_feedback
+            if input_data.allow_feedback is not None
+            else self.allow_feedback
+        )
+        state_path = input_data.state_path or self.state_path
+
         try:
             # Display data for review
             self.interface.display_data_for_approval(
-                title=input_data.title,
+                title=title,
                 data=input_data.data_to_review,
-                description=input_data.description,
+                description=description,
             )
 
             # Collect approval decision
             decision, feedback = self.interface.collect_approval_decision(
-                prompt=input_data.approval_prompt,
-                allow_feedback=input_data.allow_feedback,
+                prompt=approval_prompt,
+                allow_feedback=allow_feedback,
             )
 
             # Create approval record
@@ -277,7 +301,7 @@ class HumanApprovalNode(BaseNode[HumanApprovalNodeInput, HumanApprovalNodeOutput
             )
 
             # Store approval record in state
-            state_key = input_data.state_path or f"{self.node_id}_approval"
+            state_key = state_path or f"{self.node_id}_approval"
             self._set_nested_value(state, state_key, approval_record.model_dump())
 
             # Store approval history (append to list)
