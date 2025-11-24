@@ -21,6 +21,7 @@ from wyrdflow.nodes.human_input import (
     RichCLIInterface,
     UserCancelledError,
 )
+from wyrdflow.nodes.llm import LLMNode, LLMNodeInput, LLMNodeOutput
 
 __all__ = [
     "ApprovalDecision",
@@ -37,6 +38,9 @@ __all__ = [
     "HumanInputNodeOutput",
     "InputInterface",
     "InputValidationError",
+    "LLMNode",
+    "LLMNodeInput",
+    "LLMNodeOutput",
     "RichApprovalInterface",
     "RichCLIInterface",
     "UserCancelledError",

@@ -121,6 +121,14 @@ uv run pre-commit run
 5. **Commit**: Pre-commit hooks run automatically
 6. **Push and PR**: Follow contribution guidelines
 
+NOTE: You are never done working until the following pass successfully:
+
+- `uv run ruff format .`
+- `uv run ruff check .`
+- `uv run mypy src/wyrdflow`
+- `uv run pytest`
+- All relevant documentation is updated
+
 ### Project Standards
 
 - **Test Coverage**: Maintain 80%+ test coverage (enforced in CI)
