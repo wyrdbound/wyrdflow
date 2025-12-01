@@ -37,7 +37,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # Clone and setup the project
 git clone <repository-url>
 cd wyrdflow
-uv sync --dev
+uv sync --extra dev
 
 # Install pre-commit hooks
 uv run pre-commit install
