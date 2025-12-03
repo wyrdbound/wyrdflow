@@ -21,13 +21,27 @@ from wyrdflow.nodes.human_input import (
     RichCLIInterface,
     UserCancelledError,
 )
+from wyrdflow.nodes.if_node import IfNode, IfNodeInput, IfNodeOutput
 from wyrdflow.nodes.llm import LLMNode, LLMNodeInput, LLMNodeOutput
+from wyrdflow.nodes.router_node import (
+    RouteCondition,
+    RouterNode,
+    RouterNodeInput,
+    RouterNodeOutput,
+)
+from wyrdflow.nodes.switch_node import (
+    CaseCondition,
+    SwitchNode,
+    SwitchNodeInput,
+    SwitchNodeOutput,
+)
 
 __all__ = [
     "ApprovalDecision",
     "ApprovalInterface",
     "ApprovalRecord",
     "ApprovalValidationError",
+    "CaseCondition",
     "FieldConfig",
     "FieldValidationResult",
     "HumanApprovalNode",
@@ -36,6 +50,9 @@ __all__ = [
     "HumanInputNode",
     "HumanInputNodeInput",
     "HumanInputNodeOutput",
+    "IfNode",
+    "IfNodeInput",
+    "IfNodeOutput",
     "InputInterface",
     "InputValidationError",
     "LLMNode",
@@ -43,5 +60,12 @@ __all__ = [
     "LLMNodeOutput",
     "RichApprovalInterface",
     "RichCLIInterface",
+    "RouteCondition",
+    "RouterNode",
+    "RouterNodeInput",
+    "RouterNodeOutput",
+    "SwitchNode",
+    "SwitchNodeInput",
+    "SwitchNodeOutput",
     "UserCancelledError",
 ]
