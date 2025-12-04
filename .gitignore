@@ -200,6 +200,9 @@ coverage/
 # LangSmith
 .langsmith/
 
+# Execution traces
+traces/
+
 # AI Development files (optional)
 ai_scratch/
 experiments/

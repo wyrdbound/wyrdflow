@@ -19,9 +19,9 @@ Wyrdflow is a Python library designed for ML engineers and AI developers who nee
 - **Type-safe by default** with comprehensive type hints
 - **Production-ready** with comprehensive error handling
 
-## Current Capabilities (Phase 1)
+## Current Capabilities
 
-Wyrdflow currently provides a solid foundation for workflow orchestration:
+Wyrdflow provides production-ready workflow orchestration with comprehensive observability:
 
 ### State Management
 
@@ -30,7 +30,7 @@ Wyrdflow currently provides a solid foundation for workflow orchestration:
 - **StateInspector**: Utilities for state visualization, comparison, and search
 
 ```python
-from wyrdflow.core import WorkflowState, StateSnapshot, StateInspector
+from wyrdflow import WorkflowState, StateSnapshot, StateInspector
 
 # Create and manage workflow state
 state = WorkflowState.create_new()
@@ -38,7 +38,7 @@ state.set("user_data", {"name": "Alice", "role": "admin"})
 
 # Create snapshots for debugging/rollback
 snapshot = StateSnapshot.from_state(state, source_node_id="validation")
-restored_state = snapshot.restore()  # Restore from snapshot
+restored_state = snapshot.restore()
 
 # Inspect and analyze state
 formatted = StateInspector.format_state(state)
@@ -46,13 +46,38 @@ results = StateInspector.search_state(state, "alice")
 diff = StateInspector.compare_states(state1, state2)
 ```
 
-### Node System
+### Observability & Debugging
+
+- **Automatic Execution Logging**: Every node execution is tracked with full context
+- **Performance Metrics**: Timing statistics, success rates, and aggregation
+- **LangSmith Tracing**: Optional distributed tracing integration
+- **CLI Inspection**: Powerful command-line tools for debugging workflows
+
+```python
+from wyrdflow import get_execution_log, get_metrics_collector
+
+# Access execution history
+exec_log = get_execution_log()
+records = exec_log.get_records_by_run(workflow_run_id)
+
+# Analyze performance metrics
+metrics = get_metrics_collector()
+node_metrics = metrics.get_node_type_metrics("LLMNode")
+print(f"P95 duration: {node_metrics.p95_duration_ms}ms")
+```
+
+### Advanced Nodes
 
 - **BaseNode**: Abstract base class with retry logic and error handling
+- **Human-in-the-Loop**: HumanApprovalNode and HumanInputNode for interactive workflows
+- **LLM Integration**: Unified LLMNode with streaming, JSON mode, and tool calling
+- **Flow Control**: IfNode, SwitchNode, and RouterNode for conditional logic
 - **LangGraph Integration**: Seamless integration with LangGraph workflows
 - **Type Safety**: Full input/output validation with Pydantic schemas
 
-Run `python examples/state_management_demo.py` to see state management in action!
+Run examples to see features in action:
+- `python examples/state_management_demo.py` - State management
+- `python examples/observability_example.py` - Observability features
 
 ## Quick Start
 
@@ -142,14 +167,17 @@ Wyrdflow includes a command-line interface for workflow management:
 # Show help
 uv run wyrdflow --help
 
+# Inspect workflow execution (Phase 5)
+uv run wyrdflow inspect <workflow-run-id>
+uv run wyrdflow inspect <workflow-run-id> --format tree
+uv run wyrdflow inspect <workflow-run-id> --format json
+uv run wyrdflow inspect <workflow-run-id> --show-data
+
 # Run a workflow (coming soon)
 uv run wyrdflow run path/to/workflow.json
 
 # Validate a workflow (coming soon)
 uv run wyrdflow validate path/to/workflow.json
-
-# Show workflow information (coming soon)
-uv run wyrdflow info path/to/workflow.json
 ```
 
 ### Pre-commit Hooks
@@ -197,15 +225,20 @@ wyrdflow/
 
 Wyrdflow is being developed in phases:
 
-- **Phase 1** (Current): Foundation & Core Architecture
-- **Phase 2**: Human-in-the-Loop Nodes
-- **Phase 3**: LLM Agent Node (Unified)
-- **Phase 4**: Flow Control Nodes
-- **Phase 5**: Observability & Debugging Foundation
-- **Phase 6**: Vector Store & RAG Nodes
-- **Phase 7**: Security & Sandboxing
+- **Phase 1** ✅ Complete: Foundation & Core Architecture
+- **Phase 2** ✅ Complete: Human-in-the-Loop Nodes
+- **Phase 3** ✅ Complete: LLM Agent Node (Unified)
+- **Phase 4** ✅ Complete: Flow Control Nodes
+- **Phase 5** ✅ Complete: Observability & Debugging Foundation
+- **Phase 6** (Planned): Vector Store & RAG Nodes
+- **Phase 7** (Planned): Security & Sandboxing
 
 See [WyrdflowImplementationPlan.md](WyrdflowImplementationPlan.md) for detailed information about each phase.
+
+## Documentation
+
+- [Observability & Debugging Guide](docs/observability.md) - Comprehensive guide to execution logging, metrics, and tracing
+- [Node Documentation](docs/nodes/README.md) - Documentation for all available nodes
 
 ## Contributing
 

@@ -3,7 +3,7 @@
 from wyrdflow.core.base import BaseNode, NodeExecutionError
 from wyrdflow.core.config import NodeConfig
 from wyrdflow.core.schemas import NodeContext, NodeInput, NodeOutput
-from wyrdflow.core.state import StateInspector, StateSnapshot, WorkflowState
+from wyrdflow.core.state import StateSnapshot, WorkflowState
 from wyrdflow.nodes import (
     ApprovalDecision,
     ApprovalInterface,
@@ -23,6 +23,26 @@ from wyrdflow.nodes import (
     RichCLIInterface,
     UserCancelledError,
 )
+from wyrdflow.observability import (
+    ExecutionStatus,
+    MetricsCollector,
+    NodeExecutionRecord,
+    NodeMetrics,
+    StateDiff,
+    StateInspector,
+    TracingConfig,
+    WorkflowExecutionLog,
+    WorkflowMetrics,
+    WorkflowTracer,
+    configure_tracing,
+    get_execution_log,
+    get_metrics_collector,
+    get_state_inspector,
+    get_tracer,
+    set_execution_log,
+    set_metrics_collector,
+    set_tracer,
+)
 
 __version__ = "0.1.0"
 
@@ -32,6 +52,7 @@ __all__ = [
     "ApprovalRecord",
     "ApprovalValidationError",
     "BaseNode",
+    "ExecutionStatus",
     "FieldConfig",
     "FieldValidationResult",
     "HumanApprovalNode",
@@ -42,15 +63,31 @@ __all__ = [
     "HumanInputNodeOutput",
     "InputInterface",
     "InputValidationError",
+    "MetricsCollector",
     "NodeConfig",
     "NodeContext",
     "NodeExecutionError",
+    "NodeExecutionRecord",
     "NodeInput",
+    "NodeMetrics",
     "NodeOutput",
     "RichApprovalInterface",
     "RichCLIInterface",
+    "StateDiff",
     "StateInspector",
     "StateSnapshot",
+    "TracingConfig",
     "UserCancelledError",
+    "WorkflowExecutionLog",
+    "WorkflowMetrics",
     "WorkflowState",
+    "WorkflowTracer",
+    "configure_tracing",
+    "get_execution_log",
+    "get_metrics_collector",
+    "get_state_inspector",
+    "get_tracer",
+    "set_execution_log",
+    "set_metrics_collector",
+    "set_tracer",
 ]

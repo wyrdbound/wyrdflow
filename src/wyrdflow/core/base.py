@@ -3,8 +3,13 @@
 from abc import ABC, abstractmethod
 import asyncio
 from collections.abc import Awaitable
+from datetime import datetime
 import logging
-from typing import Any, Callable, Generic, Optional, TypeVar
+import traceback
+
+# Import observability components
+# Use TYPE_CHECKING to avoid circular imports
+from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, TypeVar
 
 from tenacity import (
     retry,
@@ -18,6 +23,13 @@ from .config import NodeConfig
 from .schemas import NodeContext, NodeInput, NodeOutput
 from .state import WorkflowState
 
+if TYPE_CHECKING:
+    from ..observability import (
+        MetricsCollector,
+        WorkflowExecutionLog,
+        WorkflowTracer,
+    )
+
 # Type variables for input/output validation
 InputType = TypeVar("InputType", bound=NodeInput)
 OutputType = TypeVar("OutputType", bound=NodeOutput)
@@ -29,11 +41,38 @@ class NodeExecutionError(Exception):
     """Exception raised during node execution."""
 
     def __init__(
-        self, message: str, node_id: str, original_exception: Optional[Exception] = None
+        self,
+        message: str,
+        node_id: str,
+        original_exception: Optional[Exception] = None,
     ):
         super().__init__(message)
         self.node_id = node_id
         self.original_exception = original_exception
+
+
+def _get_observability_components() -> tuple[
+    Optional["WorkflowExecutionLog"],
+    Optional["MetricsCollector"],
+    Optional["WorkflowTracer"],
+]:
+    """Get observability components (execution log, metrics, tracer).
+
+    Returns:
+        Tuple of (execution_log, metrics_collector, tracer)
+        Components may be None if not initialized.
+    """
+    try:
+        from ..observability import (  # noqa: PLC0415
+            get_execution_log,
+            get_metrics_collector,
+            get_tracer,
+        )
+
+        return get_execution_log(), get_metrics_collector(), get_tracer()
+    except ImportError:
+        # Observability module not available
+        return None, None, None
 
 
 class BaseNode(ABC, Generic[InputType, OutputType]):
@@ -195,9 +234,22 @@ class BaseNode(ABC, Generic[InputType, OutputType]):
             retry_state: Tenacity retry state object
         """
         self._logger.warning(
-            f"Node {self.node_id} retry attempt {retry_state.attempt_number} "
-            f"after {retry_state.seconds_since_start:.2f}s due to: {retry_state.outcome.exception()}"
+            f"Node {self.node_id} retry attempt "
+            f"{retry_state.attempt_number} "
+            f"after {retry_state.seconds_since_start:.2f}s due to: "
+            f"{retry_state.outcome.exception()}"
         )
+
+        # Record retry attempt in execution log
+        try:
+            exec_log, _, _ = _get_observability_components()
+            if exec_log and hasattr(self, "_current_execution_id"):
+                exec_log.record_retry_attempt(
+                    self._current_execution_id,
+                    retry_state.attempt_number,
+                )
+        except Exception as e:
+            logger.debug(f"Failed to record retry attempt: {e}")
 
     async def run(
         self,
@@ -213,6 +265,7 @@ class BaseNode(ABC, Generic[InputType, OutputType]):
         - Timeout enforcement
         - Output validation
         - Error handling and logging
+        - Observability (execution logging, metrics, tracing)
 
         Args:
             raw_input: Raw input data dictionary
@@ -225,6 +278,9 @@ class BaseNode(ABC, Generic[InputType, OutputType]):
         Raises:
             NodeExecutionError: If execution fails after all retries
         """
+        # Get observability components
+        exec_log, metrics, tracer = _get_observability_components()
+
         # Set up default context and state if not provided
         if context is None:
             # Create default context using state's workflow IDs
@@ -241,7 +297,39 @@ class BaseNode(ABC, Generic[InputType, OutputType]):
         # Create a copy of state for this node
         node_state = state.copy_for_node(self.node_id)
 
+        # Record execution start
+        execution_id = None
+        start_time = datetime.now()
+
+        if exec_log:
+            execution_id = exec_log.record_execution_start(
+                node_id=self.node_id,
+                workflow_id=context.workflow_id,
+                workflow_run_id=context.workflow_run_id,
+                input_data=raw_input,
+                node_name=self.name,
+                node_type=self.__class__.__name__,
+                metadata={"config": self.config.model_dump()},
+            )
+            # Store for retry logging
+            self._current_execution_id = execution_id
+
         self._logger.info(f"Starting execution of node {self.node_id}")
+
+        # Wrap execution in tracing context
+        trace_ctx: Any = {}
+        if tracer:
+            trace_ctx_manager = tracer.trace_node(
+                node_id=self.node_id,
+                node_name=self.name,
+                node_type=self.__class__.__name__,
+                workflow_id=context.workflow_id,
+                workflow_run_id=context.workflow_run_id,
+                input_data=raw_input,
+            )
+            trace_ctx_manager.__enter__()
+        else:
+            trace_ctx_manager = None
 
         try:
             # Check if output is pinned for testing
@@ -251,7 +339,8 @@ class BaseNode(ABC, Generic[InputType, OutputType]):
 
                 if pinned_output is None:
                     raise NodeExecutionError(
-                        f"Node {self.node_id} has output pinning enabled but no pinned output data",
+                        f"Node {self.node_id} has output pinning "
+                        "enabled but no pinned output data",
                         self.node_id,
                     )
 
@@ -260,7 +349,7 @@ class BaseNode(ABC, Generic[InputType, OutputType]):
                     # It's a Pydantic model
                     output_dict: dict[str, Any] = pinned_output.model_dump()
                 elif isinstance(pinned_output, dict):
-                    # It's already a dictionary - validate it through our output schema
+                    # It's already a dictionary
                     validated_output = self.validate_output(pinned_output)
                     output_dict = validated_output.model_dump()
                 else:
@@ -275,7 +364,8 @@ class BaseNode(ABC, Generic[InputType, OutputType]):
                         output_dict = validated_output.model_dump()
                     except Exception as e:
                         raise NodeExecutionError(
-                            f"Node {self.node_id} pinned output could not be validated: {e}",
+                            f"Node {self.node_id} pinned output "
+                            f"could not be validated: {e}",
                             self.node_id,
                             e,
                         ) from e
@@ -315,21 +405,107 @@ class BaseNode(ABC, Generic[InputType, OutputType]):
                 for key, value in node_state.metadata.items():
                     state.set_metadata(key, value)
 
+            # Calculate duration
+            duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+
+            # Record successful execution
+            if exec_log and execution_id:
+                exec_log.record_execution_success(
+                    execution_id=execution_id,
+                    output_data=result_dict,
+                )
+
+            # Record metrics
+            if metrics:
+                metrics.record_node_execution(
+                    workflow_id=context.workflow_id,
+                    workflow_run_id=context.workflow_run_id,
+                    node_id=self.node_id,
+                    node_type=self.__class__.__name__,
+                    success=True,
+                    duration_ms=duration_ms,
+                )
+
             self._logger.info(
-                f"Successfully completed execution of node {self.node_id}"
+                f"Successfully completed execution of node {self.node_id} "
+                f"in {duration_ms:.2f}ms"
             )
+
             return result_dict
 
         except asyncio.TimeoutError as e:
+            # Calculate duration
+            duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+
             error_msg = (
                 f"Node {self.node_id} execution timed out after {self.config.timeout}s"
             )
             self._logger.error(error_msg)
+
+            # Record timeout
+            if exec_log and execution_id:
+                exec_log.record_execution_timeout(execution_id)
+
+            # Record metrics
+            if metrics:
+                metrics.record_node_execution(
+                    workflow_id=context.workflow_id,
+                    workflow_run_id=context.workflow_run_id,
+                    node_id=self.node_id,
+                    node_type=self.__class__.__name__,
+                    success=False,
+                    duration_ms=duration_ms,
+                    timeout=True,
+                )
+
+            # Record error in trace
+            if tracer and trace_ctx:
+                tracer.record_error(trace_ctx, e)
+
             raise NodeExecutionError(error_msg, self.node_id, e) from e
+
         except Exception as e:
+            # Calculate duration
+            duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+
             error_msg = f"Node {self.node_id} execution failed: {e}"
             self._logger.error(error_msg)
+
+            # Get full traceback
+            error_tb = traceback.format_exc()
+
+            # Record failure
+            if exec_log and execution_id:
+                exec_log.record_execution_failure(
+                    execution_id=execution_id,
+                    error=e,
+                    error_traceback=error_tb,
+                )
+
+            # Record metrics
+            if metrics:
+                metrics.record_node_execution(
+                    workflow_id=context.workflow_id,
+                    workflow_run_id=context.workflow_run_id,
+                    node_id=self.node_id,
+                    node_type=self.__class__.__name__,
+                    success=False,
+                    duration_ms=duration_ms,
+                )
+
+            # Record error in trace
+            if tracer and trace_ctx:
+                tracer.record_error(trace_ctx, e, error_tb)
+
             raise NodeExecutionError(error_msg, self.node_id, e) from e
+
+        finally:
+            # Clean up tracing context
+            if trace_ctx_manager:
+                try:
+                    trace_ctx_manager.__exit__(None, None, None)
+                except Exception as e:
+                    logger.warning(f"Failed to clean up trace context: {e}")
 
     def as_langraph_node(self) -> Callable[..., Awaitable[dict[str, Any]]]:
         """Convert this node to a LangGraph-compatible function.

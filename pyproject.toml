@@ -54,6 +54,9 @@ docs = [
     "myst-parser>=2.0.0",
 ]
 
+[project.scripts]
+wyrdflow = "wyrdflow.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/wyrdbound/wyrdflow"
 Documentation = "https://wyrdflow.readthedocs.io/"
