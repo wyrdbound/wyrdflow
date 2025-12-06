@@ -4,6 +4,11 @@ from typing import Any
 
 import pytest
 
+from wyrdflow.observability.execution_log import (
+    WorkflowExecutionLog,
+    set_execution_log,
+)
+
 
 @pytest.fixture  # type: ignore[misc]
 def sample_workflow_state() -> dict[str, Any]:
@@ -28,3 +33,22 @@ def mock_node_config() -> dict[str, Any]:
         "timeout": 30.0,
         "enable_logging": True,
     }
+
+
+@pytest.fixture(autouse=True)  # type: ignore[misc]
+def disable_trace_auto_export():
+    """Disable automatic trace export for all tests to avoid filesystem noise.
+
+    This fixture runs automatically before each test and ensures that
+    the global execution log is configured to not auto-export traces.
+    Tests that specifically test auto-export functionality can override
+    this by creating their own WorkflowExecutionLog instances.
+    """
+    # Create execution log with trace_dir=None to disable auto-export
+    test_log = WorkflowExecutionLog(trace_dir=None)
+    set_execution_log(test_log)
+
+    yield
+
+    # Clean up after test
+    test_log.clear()

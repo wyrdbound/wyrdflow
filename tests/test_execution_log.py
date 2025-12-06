@@ -133,7 +133,7 @@ class TestWorkflowExecutionLog:
     @pytest.fixture
     def exec_log(self):
         """Create a fresh execution log for each test."""
-        return WorkflowExecutionLog(max_records=100, max_data_size=1000)
+        return WorkflowExecutionLog(max_records=100, max_data_size=1000, trace_dir=None)
 
     def test_create_log(self, exec_log):
         """Test creating an execution log."""
@@ -347,7 +347,7 @@ class TestWorkflowExecutionLog:
     def test_cleanup_old_records(self):
         """Test that old records are cleaned up."""
         # Create log with small max_records
-        exec_log = WorkflowExecutionLog(max_records=5)
+        exec_log = WorkflowExecutionLog(max_records=5, trace_dir=None)
 
         workflow_id = uuid4()
         workflow_run_id = uuid4()

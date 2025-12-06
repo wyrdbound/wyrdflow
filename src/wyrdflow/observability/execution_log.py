@@ -5,6 +5,7 @@ from datetime import datetime
 from enum import Enum
 import json
 import logging
+from pathlib import Path
 import threading
 from typing import Any, Optional
 from uuid import UUID
@@ -144,6 +145,7 @@ class WorkflowExecutionLog:
         max_records: int = 10000,
         max_data_size: int = 10240,  # 10KB default
         retention_seconds: Optional[int] = None,  # No automatic cleanup by default
+        trace_dir: Optional[Path] = Path("traces"),  # Auto-export to traces/ by default
     ):
         """Initialize the execution log.
 
@@ -151,16 +153,24 @@ class WorkflowExecutionLog:
             max_records: Maximum number of records to keep in memory
             max_data_size: Maximum size of input/output data to store (bytes)
             retention_seconds: How long to keep records (None = indefinite)
+            trace_dir: Directory to auto-export traces (None = no auto-export)
         """
         self.max_records = max_records
         self.max_data_size = max_data_size
         self.retention_seconds = retention_seconds
+        self.trace_dir = trace_dir
 
         # Thread-safe storage
         self._lock = threading.RLock()
         self._records: list[NodeExecutionRecord] = []
         self._records_by_run: dict[UUID, list[NodeExecutionRecord]] = defaultdict(list)
         self._records_by_node: dict[str, list[NodeExecutionRecord]] = defaultdict(list)
+        self._exported_runs: set[UUID] = set()  # Track which runs have been exported
+
+        # Create trace directory if auto-export is enabled
+        if self.trace_dir:
+            self.trace_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Auto-export enabled to directory: {self.trace_dir}")
 
         logger.info(
             f"Initialized WorkflowExecutionLog with max_records={max_records}, "
@@ -255,6 +265,44 @@ class WorkflowExecutionLog:
             logger.debug(f"Started execution: {execution_id}")
             return execution_id
 
+    def _auto_export_trace(self, workflow_run_id: UUID) -> None:
+        """Automatically export trace if auto-export is enabled.
+
+        This is called after each node execution completion to ensure
+        traces are persisted to disk. For workflows with multiple nodes,
+        the trace file is updated after each node completes, building up
+        a complete execution history.
+
+        Args:
+            workflow_run_id: Workflow run identifier to export
+        """
+        # Check if auto-export is enabled
+        if not self.trace_dir:
+            return
+
+        # Export to file (always export to keep trace file up-to-date)
+        try:
+            json_output = self.export_to_json(workflow_run_id)
+            output_file = self.trace_dir / f"execution_{workflow_run_id}.json"
+
+            with output_file.open("w") as f:
+                f.write(json_output)
+
+            # Track that we've exported this run (for metrics/logging)
+            is_first_export = workflow_run_id not in self._exported_runs
+            self._exported_runs.add(workflow_run_id)
+
+            if is_first_export:
+                logger.debug(
+                    f"Auto-exported trace for run {workflow_run_id} to {output_file}"
+                )
+            else:
+                logger.debug(
+                    f"Updated trace for run {workflow_run_id} at {output_file}"
+                )
+        except Exception as e:
+            logger.error(f"Failed to auto-export trace for run {workflow_run_id}: {e}")
+
     def record_execution_success(
         self,
         execution_id: str,
@@ -283,6 +331,9 @@ class WorkflowExecutionLog:
             record.mark_success(truncated_output or {}, output_size)
             logger.debug(f"Completed execution: {execution_id}")
 
+            # Auto-export trace if enabled
+            self._auto_export_trace(record.workflow_run_id)
+
     def record_execution_failure(
         self,
         execution_id: str,
@@ -305,6 +356,9 @@ class WorkflowExecutionLog:
             record.mark_failed(error, error_traceback)
             logger.debug(f"Failed execution: {execution_id} - {error}")
 
+            # Auto-export trace if enabled
+            self._auto_export_trace(record.workflow_run_id)
+
     def record_execution_timeout(self, execution_id: str) -> None:
         """Record timeout of a node execution.
 
@@ -319,6 +373,9 @@ class WorkflowExecutionLog:
 
             record.mark_timeout()
             logger.debug(f"Timed out execution: {execution_id}")
+
+            # Auto-export trace if enabled
+            self._auto_export_trace(record.workflow_run_id)
 
     def record_retry_attempt(self, execution_id: str, attempt: int) -> None:
         """Record a retry attempt for a node execution.
@@ -452,6 +509,7 @@ class WorkflowExecutionLog:
             self._records.clear()
             self._records_by_run.clear()
             self._records_by_node.clear()
+            self._exported_runs.clear()
             logger.info("Cleared all execution records")
 
     def export_to_json(self, workflow_run_id: Optional[UUID] = None) -> str:
