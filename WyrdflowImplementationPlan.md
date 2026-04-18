@@ -3,7 +3,7 @@
 **Project**: Wyrdflow
 **Tagline**: Production-grade workflow orchestration for Agentic AI
 **Version**: 1.0
-**Last Updated**: October 26, 2025
+**Last Updated**: October 29, 2025
 
 ---
 
@@ -12,10 +12,11 @@
 1. [Project Overview](#project-overview)
 2. [Target Users & Use Cases](#target-users--use-cases)
 3. [Core Requirements](#core-requirements)
-4. [Implementation Phases](#implementation-phases)
-5. [Milestones & Timeline](#milestones--timeline)
-6. [Development Principles](#development-principles)
-7. [Success Metrics](#success-metrics)
+4. [Architecture & Design Patterns](#architecture--design-patterns)
+5. [Implementation Phases](#implementation-phases)
+6. [Milestones & Timeline](#milestones--timeline)
+7. [Development Principles](#development-principles)
+8. [Success Metrics](#success-metrics)
 
 ---
 
@@ -39,6 +40,7 @@ Unlike traditional LangGraph workflows where nodes are simple functions:
 
 - **Class-based nodes** with full input/output validation
 - **Declarative configuration** for retries, timeouts, and behavior
+- **Enhanced state management** leveraging LangGraph's durable execution with debugging capabilities
 - **Output pinning** (n8n-style) for testing and debugging
 - **Built-in observability** with LangSmith integration
 - **Workflow serialization** for version control and deployment
@@ -84,7 +86,8 @@ Unlike traditional LangGraph workflows where nodes are simple functions:
 ### State Management
 
 - **Nested object support** (dicts of nested objects)
-- **State persistence** between runs (resume workflows)
+- **State persistence** between runs (resume workflows) - leverages LangGraph's durable execution
+- **Enhanced state debugging** with Wyrdflow's StateInspector and comparison tools
 - **State inspection** at any node for troubleshooting
 - **State versioning** via JSON export and version control
 
@@ -110,6 +113,44 @@ Unlike traditional LangGraph workflows where nodes are simple functions:
 - **Secrets management** for API keys and credentials
 - **Input validation** and output sanitization
 - **Multi-tenancy** architecture (future consideration)
+
+---
+
+## Architecture & Design Patterns
+
+To ensure Wyrdflow remains maintainable and easy to use as it scales, the following architectural patterns should be followed for all node implementations.
+
+### Declarative Node Configuration
+
+Nodes should be configured declaratively at instantiation time, rather than through runtime state manipulation. This eliminates boilerplate "prep" and "extract" steps in the workflow.
+
+- **Constructor-based Config**: Static configuration (prompts, titles, model parameters) must be passed to `__init__`.
+- **State Mapping**: Nodes should accept `input_map` and `output_map` dictionaries to define how they interact with the global workflow state.
+  - `input_map`: Maps global state keys to node input arguments (e.g., `{"data_to_review": "document_data"}`).
+  - `output_map`: Maps node results to global state keys (e.g., `{"decision": "content_decision"}`).
+
+### Type-Safe Input Schemas
+
+Leverage Pydantic's power for input definition and validation:
+
+- **Pydantic Models**: Use Pydantic models to define input schemas instead of raw dictionaries or list of field configs.
+- **Metadata via `json_schema_extra`**: Store UI-specific metadata (prompts, help text, placeholders) in the `json_schema_extra` field of Pydantic fields.
+- **Factory Methods**: Provide `from_model` class methods to instantiate nodes directly from Pydantic schemas.
+
+### Composable Node Architecture
+
+The `BaseNode` class provides the foundation for all nodes, ensuring consistent behavior:
+
+- **LangGraph Integration**: The `as_langraph_node()` method automatically handles state mapping, validation, and error handling, wrapping the core logic.
+- **Separation of Concerns**:
+  - `__init__`: Configuration and validation setup.
+  - `execute()`: Core business logic (pure, testable).
+  - `as_langraph_node()`: Integration glue (state I/O).
+
+### State Management Strategy
+
+- **Flat vs. Nested**: Support both flat state keys and nested dot-notation paths (e.g., `novel.chapter1.title`) in mappings.
+- **Explicit Data Flow**: Data flow should be explicit in the graph definition via mappings, not hidden in side effects.
 
 ---
 
@@ -145,6 +186,7 @@ Unlike traditional LangGraph workflows where nodes are simple functions:
    - `WorkflowState` base class with type hints
    - State inspection utilities
    - State snapshot/restore mechanisms (in-memory)
+   - Foundation for LangGraph durable execution integration
 
 4. **Basic LangGraph Integration**
    - Wrapper for `StateGraph` with enhanced features
@@ -179,15 +221,16 @@ Unlike traditional LangGraph workflows where nodes are simple functions:
    - Pause workflow execution
    - Prompt user for input (CLI interface initially)
    - Type validation on user input using Pydantic
-   - Timeout handling with configurable default values
-   - Support for different input types (text, numbers, choices)
+   - Flexible field configuration with dynamic schema
+   - Custom validation functions
+   - Support for different input types (text, numbers, booleans, lists)
+   - Pluggable interface design for future web/GUI support
 
 2. **Human Approval Node**
 
    - Present data for review with formatted display
    - Binary approve/reject flow
    - Optional feedback/comment collection
-   - Timeout with configurable default action
    - Approval history tracking
 
 3. **Input Methods**
@@ -200,14 +243,13 @@ Unlike traditional LangGraph workflows where nodes are simple functions:
 - ✅ `HumanInputNode` class
 - ✅ `HumanApprovalNode` class
 - ✅ Example: Document review workflow with human approval
-- ✅ Tests for timeout and validation scenarios
+- ✅ Tests for validation scenarios
 - ✅ Documentation for human interaction patterns
 
 #### Success Criteria
 
 - Workflow pauses and waits for human input
 - Handles invalid input gracefully with clear error messages
-- Timeout behavior is configurable and predictable
 - Works seamlessly with CLI interface
 
 ---
@@ -1081,11 +1123,12 @@ Unlike traditional LangGraph workflows where nodes are simple functions:
 
 2. **State Persistence**
 
-   - Save execution state to database (PostgreSQL, MongoDB)
-   - Resume failed workflows from checkpoint
-   - Checkpoint/restore API
-   - Automatic checkpointing (configurable frequency)
-   - State retention policies
+   - Leverage LangGraph's durable execution as underlying persistence layer
+   - Enhanced state management with Wyrdflow's debugging capabilities
+   - Resume failed workflows from LangGraph checkpoints
+   - Checkpoint/restore API with Wyrdflow state enhancements
+   - Automatic checkpointing via LangGraph's built-in mechanisms
+   - State retention policies through LangGraph configuration
 
 3. **Enhanced Metrics**
 
@@ -1118,8 +1161,8 @@ Unlike traditional LangGraph workflows where nodes are simple functions:
 
 #### Deliverables
 
-- ✅ Replay engine with state restoration
-- ✅ State persistence layer (database-backed)
+- ✅ Replay engine with LangGraph-backed state restoration
+- ✅ Enhanced state persistence layer (LangGraph durable execution + Wyrdflow features)
 - ✅ Prometheus metrics exporter
 - ✅ Alerting integration examples
 - ✅ Profiling tools and documentation
@@ -1128,8 +1171,9 @@ Unlike traditional LangGraph workflows where nodes are simple functions:
 
 #### Success Criteria
 
-- Can rerun from any node reliably
-- State persistence has <1% overhead
+- Can rerun from any node reliably using LangGraph's durable execution
+- State persistence leverages battle-tested LangGraph infrastructure
+- Enhanced debugging capabilities work seamlessly with LangGraph checkpoints
 - Metrics integrate seamlessly with Prometheus/Grafana
 - Alerts trigger correctly on failures
 - Production issues are debuggable within minutes

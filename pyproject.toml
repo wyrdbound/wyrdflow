@@ -28,6 +28,8 @@ dependencies = [
     "langsmith>=0.4.36",
     "tenacity>=8.2.0",
     "typing-extensions>=4.8.0",
+    "rich>=13.0.0",
+    "langchain-ollama>=0.2.0",
 ]
 
 [project.optional-dependencies]
@@ -52,14 +54,14 @@ docs = [
     "myst-parser>=2.0.0",
 ]
 
+[project.scripts]
+wyrdflow = "wyrdflow.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/wyrdbound/wyrdflow"
 Documentation = "https://wyrdflow.readthedocs.io/"
 Repository = "https://github.com/wyrdbound/wyrdflow"
 "Bug Tracker" = "https://github.com/wyrdbound/wyrdflow/issues"
-
-[project.scripts]
-wyrdflow = "wyrdflow.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -83,6 +85,9 @@ python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+]
 
 [tool.coverage.run]
 source = ["src/wyrdflow"]
@@ -159,6 +164,8 @@ warn_no_return = true
 warn_unreachable = true
 strict_equality = true
 strict_concatenate = true
+mypy_path = "src"
+packages = ["wyrdflow"]
 
 [[tool.mypy.overrides]]
 module = [
@@ -168,3 +175,11 @@ module = [
     "tenacity.*",
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+disallow_untyped_decorators = false
+ignore_errors = true
